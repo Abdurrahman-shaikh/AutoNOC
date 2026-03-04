@@ -6,7 +6,7 @@ Key behaviours:
 - Time window is measured back from the LATEST timestamp in the CSV,
   not from system clock — so historical CSVs work correctly.
 - Window hours are passed in at runtime (user-chosen, 1–24).
-- PLMN-specific column filtering is applied via get_columns_for_plmn().
+- PLMN-specific column filtering is applied via config plmn_columns section.
 """
 import logging
 import pandas as pd
@@ -75,18 +75,25 @@ def load_and_filter(csv_path: str, window_hours: int):
     return kept, dt_col
 
 
-def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str) -> pd.DataFrame:
+def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str, config: dict) -> pd.DataFrame:
     """
     Assembles the final output DataFrame from filtered rows.
 
     Steps:
-      1. Map CSV columns → numeric series using csv_map fragments
-      2. Run computed lambdas to derive additional columns
-      3. Apply PLMN-specific column filtering (e.g. PLMN 40459 reduced set)
-      4. Cast types and return ordered DataFrame
+      1. Resolve PLMN-specific column list from config, falling back to
+         report_definitions if the PLMN is not listed in config.
+      2. Map CSV columns → numeric series using csv_map fragments.
+      3. Run computed lambdas to derive additional columns.
+      4. Cast types and return ordered DataFrame.
     """
-    # Use the PLMN-appropriate column list
-    columns   = get_columns_for_plmn(rdef, plmn)
+    # Resolve column list: config plmn_columns takes priority over report_definitions
+    plmn_cols = config.get("plmn_columns", {})
+    columns   = (
+        plmn_cols.get(str(plmn).strip())
+        or plmn_cols.get("__DEFAULT__")
+        or get_columns_for_plmn(rdef, plmn)
+    )
+
     csv_map   = rdef.get("csv_map",   {})
     computed  = rdef.get("computed",  {})
     rate_cols = set(rdef.get("rate_cols", []))
