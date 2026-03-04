@@ -1,32 +1,51 @@
-name: Build Windows EXE
+name: Build AutoNOC Windows EXE
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:   # lets you trigger manually from GitHub UI
+    branches: [ main, master ]
+  workflow_dispatch:   # lets you trigger manually from GitHub UI anytime
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # Step 1: Check out your repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python 3.11 on the Windows runner
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # Step 3: Install all dependencies + PyInstaller
+      # requirements.txt has no venv — pip installs directly, which is correct
       - name: Install dependencies
         run: |
-          pip install pyinstaller
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
+      # Step 4: Build the EXE using AutoNOC.spec
+      # The spec file tells PyInstaller exactly what to bundle
       - name: Build EXE
         run: |
-          pyinstaller --onefile --name AutoNOC --add-data "config;config" --add-data "src;src" main.py
+          pyinstaller AutoNOC.spec
 
-      - name: Upload EXE
+      # Step 5: Verify the EXE was actually created
+      - name: Verify build output
+        run: |
+          dir dist\
+          echo "Build successful"
+
+      # Step 6: Upload the EXE as a downloadable artifact
+      # Go to Actions tab -> your run -> Artifacts section to download
+      - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AutoNOC-Windows
-          path: dist/AutoNOC.exe
+          name: AutoNOC
+          path: dist\AutoNOC.exe
+          retention-days: 30
