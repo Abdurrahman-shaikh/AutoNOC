@@ -1,6 +1,5 @@
 """
-Configures application-wide logging.
-Creates a rotating log file and a console handler.
+Configures application-wide logging with a rotating log file and console output.
 Max file size: 5 MB, keeps last 7 backups.
 """
 import os

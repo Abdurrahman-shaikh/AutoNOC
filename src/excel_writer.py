@@ -5,12 +5,11 @@ Behaviour:
   - Never deletes the master file — always appends below the last block
   - One sheet per calendar day, named {prefix}_{DD-Mon-YYYY}
   - At midnight a new sheet tab is created automatically
-  - Each run appends exactly one block: separator + headers + data rows + TOTAL
+  - Each run appends: separator row + headers + data rows + TOTAL row
   - KPI highlighting targets only the specific cell that triggered the alert:
       RED    = value below absolute floor threshold
-      ORANGE = value dropped more than N% compared to previous row
+      ORANGE = value dropped more than N% vs previous row
   - All other cells keep normal alternating white/blue row colours
-  - Column set is determined by the active PLMN via get_columns_for_plmn()
 """
 import os
 import logging
@@ -39,7 +38,6 @@ def _align(h="center", v="center", wrap=True) -> Alignment:
     return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
 
 def _style(cell, font=None, fill=None, align=None, fmt=None):
-    """Apply all style properties to a single cell."""
     if font:  cell.font          = font
     if fill:  cell.fill          = fill
     if align: cell.alignment     = align
@@ -51,20 +49,13 @@ def _style(cell, font=None, fill=None, align=None, fmt=None):
 
 def _compute_kpi_flags(summary, kpi_cols: list, thresholds: dict) -> dict:
     """
-    Scans each KPI column and returns a flag for cells that breach thresholds.
-
-    Returns dict of {(row_index, col_name): flag} where flag is:
-      'drop'  → value dropped more than drop_pct% vs the previous row
-      'floor' → value is below floor_pct absolute threshold
-      'both'  → both conditions met (RED takes priority over ORANGE)
-
-    Normalises \\n in column names so config.json keys always match
-    even if the column name contains a line break character.
+    Returns {(row_index, col_name): flag} for cells breaching thresholds.
+    flag values: 'drop' (orange), 'floor' (red), 'both' (red takes priority).
+    Normalises newlines in column names so config keys always match.
     """
-    # Build normalised lookup so '\n' vs ' ' differences don't break matching
     norm_thr = {k.replace("\n", " "): v for k, v in thresholds.items()}
+    flags    = {}
 
-    flags = {}
     for col in kpi_cols:
         t = thresholds.get(col) or norm_thr.get(col.replace("\n", " "))
         if not t or col not in summary.columns:
@@ -79,11 +70,9 @@ def _compute_kpi_flags(summary, kpi_cols: list, thresholds: dict) -> dict:
                 continue
             flag = None
 
-            # Check absolute floor first
             if val < floor_pct:
                 flag = "floor"
 
-            # Check percentage drop vs previous row
             if i > 0:
                 prev = vals[i - 1]
                 if isinstance(prev, (int, float)) and prev > 0:
@@ -99,26 +88,21 @@ def _compute_kpi_flags(summary, kpi_cols: list, thresholds: dict) -> dict:
 # ── Sheet management ──────────────────────────────────────────────────────────
 
 def _today_sheet_name(rdef: dict) -> str:
-    """Generates the sheet tab name for today, e.g. 'Traffic_26-Feb-2026'."""
     return f"{rdef.get('sheet_prefix', 'Report')}_{datetime.now().strftime('%d-%b-%Y')}"[:31]
 
 
 def _get_or_create_sheet(wb, rdef: dict, columns: list, widths: dict):
-    """
-    Returns an existing sheet for today or creates a new one.
-    If the sheet already exists, positions the cursor 2 rows below
-    the last used row (leaving one blank gap between blocks).
-    """
+    """Returns today's sheet, or creates it. Returns (sheet, next_row)."""
     name = _today_sheet_name(rdef)
     if name in wb.sheetnames:
         ws       = wb[name]
-        next_row = ws.max_row + 2   # one blank gap between report blocks
+        next_row = ws.max_row + 2
     else:
         ws = wb.create_sheet(title=name)
         ws.sheet_properties.tabColor = "1F3864"
         for ci, col in enumerate(columns, 1):
             ws.column_dimensions[get_column_letter(ci)].width = widths.get(col, 14)
-        ws.freeze_panes = "B3"      # freeze date column and header row
+        ws.freeze_panes = "B3"
         next_row = 1
         log.info(f"  Created new sheet: '{name}'")
     return ws, next_row
@@ -130,20 +114,13 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
     """
     Appends one formatted report block to today's sheet in the master workbook.
 
-    Block structure (top to bottom):
-      Row 1:      Separator bar — report name, time window, generation timestamp
-      Row 2:      Column headers — dark blue background, white text
-      Rows 3–N:   Data rows — alternating white/blue, KPI cells highlighted
-      Row N+1:    TOTAL row — SUM for counts, AVERAGE for rates
+    Block structure:
+      Row 1:    Separator bar with report name, PLMN, time range, timestamp
+      Row 2:    Column headers (dark blue / white)
+      Rows 3-N: Data rows (alternating white/blue, KPI cells highlighted)
+      Row N+1:  TOTAL row (SUM for counts, AVERAGE for rates)
 
-    Parameters:
-      summary  : pd.DataFrame  from processor.process()
-      rdef     : dict          report definition from report_definitions.py
-      config   : dict          loaded from config.json
-      plmn     : str           active PLMN (determines column set)
-
-    Returns:
-      (xlsx_path, sheet_name, first_row, last_row)
+    Returns: (xlsx_path, sheet_name, first_row, last_row)
     """
     colors    = config["colors"]
     kpi_thr   = config["kpi_thresholds"]
@@ -152,8 +129,17 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
     xlsx_path = os.path.join(out_dir, filename)
     os.makedirs(out_dir, exist_ok=True)
 
-    # Get the correct column set for this PLMN
-    columns   = get_columns_for_plmn(rdef, plmn)
+    # Resolve column list from config plmn_columns first, then fallback
+    plmn_cols = config.get("plmn_columns", {})
+    columns   = (
+        plmn_cols.get(str(plmn).strip())
+        or plmn_cols.get("__DEFAULT__")
+        or get_columns_for_plmn(rdef, plmn)
+    )
+
+    # Filter columns to only those that exist in the summary DataFrame
+    columns = [c for c in columns if c in summary.columns or c == "Date Time"]
+
     sum_cols  = set(rdef.get("sum_cols",  []))
     avg_cols  = set(rdef.get("avg_cols",  []))
     rate_cols = set(rdef.get("rate_cols", []))
@@ -162,7 +148,6 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
     widths    = rdef.get("col_widths", {})
     flags     = _compute_kpi_flags(summary, kpi_cols, kpi_thr)
 
-    # Open existing workbook or create a new one
     if os.path.exists(xlsx_path):
         wb = load_workbook(xlsx_path)
     else:
@@ -172,7 +157,7 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
 
     ws, next_row = _get_or_create_sheet(wb, rdef, columns, widths)
 
-    # Prepare reusable style objects
+    # Reusable style objects
     sep_font   = _font(size=11, bold=True,  color=colors["sep_font"])
     hdr_font   = _font(size=9,  bold=True,  color=colors["header_font"])
     data_font  = _font(size=9)
@@ -191,13 +176,13 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
     center_align = _align("center")
     center_nw    = _align("center", wrap=False)
 
-    # ── Separator / title row ─────────────────────────────────────────────────
-    first_dt = summary["Date Time"].iloc[0]  if not summary.empty else "–"
-    last_dt  = summary["Date Time"].iloc[-1] if not summary.empty else "–"
-    now_str  = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
+    # Separator / title row
+    first_dt  = summary["Date Time"].iloc[0]  if not summary.empty else "-"
+    last_dt   = summary["Date Time"].iloc[-1] if not summary.empty else "-"
+    now_str   = datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     sep_label = (
         f"  {rdef['label']}  |  PLMN: {plmn}  |  "
-        f"{first_dt}  →  {last_dt}  |  Generated: {now_str}"
+        f"{first_dt}  ->  {last_dt}  |  Generated: {now_str}"
     )
 
     sep_row = next_row
@@ -209,50 +194,47 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
     _style(c, font=sep_font, fill=sep_fill, align=left_align)
     ws.row_dimensions[sep_row].height = 22
 
-    # ── Column header row ─────────────────────────────────────────────────────
+    # Column header row
     hdr_row = sep_row + 1
     for ci, col in enumerate(columns, 1):
         c = ws.cell(row=hdr_row, column=ci, value=col)
         _style(c, font=hdr_font, fill=hdr_fill, align=center_align)
     ws.row_dimensions[hdr_row].height = 34
 
-    # ── Data rows ─────────────────────────────────────────────────────────────
+    # Data rows — alternating colours, only flagged KPI cells get alert colour
     data_start = hdr_row + 1
     for ri, row_data in summary.iterrows():
         excel_row = data_start + ri
-        # Alternating row background — preserved regardless of KPI state
         row_fill  = alt_fill if ri % 2 == 0 else white_fill
 
         for ci, col in enumerate(columns, 1):
             val = row_data.get(col, "")
             c   = ws.cell(row=excel_row, column=ci, value=val)
 
-            # Choose font and number format based on column type
             if col in rate_cols:
-                fnt = rate_font;  fmt = "0.00"
+                fnt = rate_font; fmt = "0.00"
             elif col in int_cols:
-                fnt = data_font;  fmt = "#,##0"
+                fnt = data_font; fmt = "#,##0"
             elif col == "Date Time":
-                fnt = data_font;  fmt = "@"
+                fnt = data_font; fmt = "@"
             else:
-                fnt = data_font;  fmt = "General"
+                fnt = data_font; fmt = "General"
 
             align = left_align if ci == 1 else center_nw
 
-            # Only colour the exact cell that triggered a KPI flag.
-            # All other cells use the normal alternating row background.
+            # Only the specific flagged cell gets alert colour
             flag = flags.get((ri, col))
             if flag in ("floor", "both"):
-                fill = floor_fill   # RED
+                fill = floor_fill
             elif flag == "drop":
-                fill = drop_fill    # ORANGE
+                fill = drop_fill
             else:
-                fill = row_fill     # normal alternating
+                fill = row_fill
 
             _style(c, font=fnt, fill=fill, align=align, fmt=fmt)
         ws.row_dimensions[excel_row].height = 15
 
-    # ── TOTAL row ─────────────────────────────────────────────────────────────
+    # TOTAL row
     total_row = data_start + len(summary)
     c = ws.cell(row=total_row, column=1, value="TOTAL")
     _style(c, font=total_font, fill=total_fill, align=left_align)
@@ -264,11 +246,9 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
         cl = get_column_letter(ci)
 
         if col in sum_cols:
-            # SUM of the data rows above
             c.value = f"=SUM({cl}{data_start}:{cl}{total_row - 1})"
             fmt     = "#,##0" if col in int_cols else "0.00"
         elif col in avg_cols:
-            # AVERAGE of the data rows, ignoring errors
             c.value = f"=IFERROR(AVERAGE({cl}{data_start}:{cl}{total_row - 1}),0)"
             fmt     = "0.00"
         else:
@@ -279,5 +259,5 @@ def append_report(summary, rdef: dict, config: dict, plmn: str):
 
     wb.save(xlsx_path)
     sheet_name = _today_sheet_name(rdef)
-    log.info(f"  Saved → sheet='{sheet_name}'  rows {sep_row}–{total_row}  |  {xlsx_path}")
+    log.info(f"  Saved -> sheet='{sheet_name}'  rows {sep_row}-{total_row}  |  {xlsx_path}")
     return xlsx_path, sheet_name, sep_row, total_row

@@ -6,7 +6,8 @@ Key behaviours:
 - Time window is measured back from the LATEST timestamp in the CSV,
   not from system clock — so historical CSVs work correctly.
 - Window hours are passed in at runtime (user-chosen, 1–24).
-- PLMN-specific column filtering is applied via config plmn_columns section.
+- PLMN-specific column list is resolved from config.json first,
+  falling back to report_definitions if the PLMN is not listed.
 """
 import logging
 import pandas as pd
@@ -75,18 +76,19 @@ def load_and_filter(csv_path: str, window_hours: int):
     return kept, dt_col
 
 
-def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str, config: dict) -> pd.DataFrame:
+def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict,
+                  plmn: str, config: dict) -> pd.DataFrame:
     """
     Assembles the final output DataFrame from filtered rows.
 
     Steps:
-      1. Resolve PLMN-specific column list from config, falling back to
-         report_definitions if the PLMN is not listed in config.
-      2. Map CSV columns → numeric series using csv_map fragments.
-      3. Run computed lambdas to derive additional columns.
-      4. Cast types and return ordered DataFrame.
+      1. Resolve the correct column list for this PLMN.
+         config.json plmn_columns takes priority over report_definitions.
+      2. Map CSV columns to numeric Series using csv_map fragments.
+      3. Compute derived columns (e.g. answer rates, totals).
+      4. Cast types and return the ordered DataFrame.
     """
-    # Resolve column list: config plmn_columns takes priority over report_definitions
+    # Resolve column list: config plmn_columns -> __DEFAULT__ -> report_definitions
     plmn_cols = config.get("plmn_columns", {})
     columns   = (
         plmn_cols.get(str(plmn).strip())
@@ -112,7 +114,7 @@ def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str, config: 
             log.warning(f"  Computed column '{col}' failed: {e} — using 0")
             mapped[col] = pd.Series([0.0] * len(df))
 
-    # Step 3: Assemble final DataFrame in the correct column order
+    # Step 3: Assemble final DataFrame in the configured column order
     result = {"Date Time": df[dt_col].dt.strftime("%d-%b-%Y %H:%M")}
     for col in columns:
         if col == "Date Time":
@@ -126,16 +128,17 @@ def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str, config: 
             else:
                 result[col] = s.round(4)
         else:
-            # Try to read as a string column (e.g. Node Name, Status)
+            # Try to read directly as a string column from the CSV
             frags = csv_map.get(col, [col.replace("\n", "_")])
             result[col] = _find_string(df, frags)
 
     return pd.DataFrame(result)
 
 
-def process(csv_path: str, window_hours: int, rdef: dict, plmn: str, config: dict) -> pd.DataFrame:
+def process(csv_path: str, window_hours: int, rdef: dict,
+            plmn: str, config: dict) -> pd.DataFrame:
     """
-    Full pipeline: load CSV → filter to time window → build summary DataFrame.
+    Full pipeline: load CSV -> filter to time window -> build summary DataFrame.
     Returns an empty DataFrame if no rows fall within the window.
     """
     df, dt_col = load_and_filter(csv_path, window_hours)

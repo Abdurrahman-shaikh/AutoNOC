@@ -6,17 +6,14 @@
         "report_periodicity": "15 mins",
         "template":           "Default"
     },
-
     "_comment_circles": "Add or remove circles here. plmn must match exactly what the portal dropdown shows.",
     "circles": [
-        { "name": "HR  — Haryana",   "plmn": "40434" },
-        { "name": "RJ  — Rajasthan", "plmn": "40459" },
-        { "name": "DL  — Delhi",     "plmn": "40470" }
+        { "name": "HR  - Haryana",   "plmn": "40434" },
+        { "name": "RJ  - Rajasthan", "plmn": "40459" },
+        { "name": "DL  - Delhi",     "plmn": "40470" }
     ],
-
-    "_comment_plmn_columns": "Columns for Traffic report per PLMN. Key = PLMN exactly as in portal. __DEFAULT__ applies to any PLMN not listed. Columns appear in order you write them. Any name not in csv_map is searched directly in the CSV by fragment.",
+    "_comment_plmn_columns": "Columns for Traffic report per PLMN. Key = PLMN string. __DEFAULT__ applies to any PLMN not listed. Columns appear in the order you write them.",
     "plmn_columns": {
-
         "__DEFAULT__": [
             "Date Time",
             "PLMN",
@@ -30,7 +27,6 @@
             "MT Answer\nRate (%)",
             "Total Answer\nRate (%)"
         ],
-
         "40434": [
             "Date Time",
             "PLMN",
@@ -44,7 +40,6 @@
             "MT Answer\nRate (%)",
             "Total Answer\nRate (%)"
         ],
-
         "40459": [
             "Date Time",
             "PLMN",
@@ -62,7 +57,6 @@
             "MT Answer\nRate (%)",
             "Total Answer\nRate (%)"
         ],
-
         "40470": [
             "Date Time",
             "PLMN",
@@ -77,7 +71,6 @@
             "Total Answer\nRate (%)"
         ]
     },
-
     "schedule": {
         "headless_browser": false
     },

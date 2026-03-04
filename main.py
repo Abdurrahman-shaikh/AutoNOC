@@ -17,24 +17,6 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-
-# ── Path resolution ───────────────────────────────────────────────────────────
-#
-# Two different contexts:
-#
-#  A) Running as AutoNOC.exe (PyInstaller --onefile)
-#     sys.frozen  = True
-#     sys.executable = C:\Users\you\AutoNOC.exe
-#     sys._MEIPASS   = C:\Users\you\AppData\Local\Temp\_MEIxxxxxx\
-#                      (PyInstaller extracts bundled files here at startup)
-#
-#     BASE_DIR   = folder containing AutoNOC.exe  <- all user files live here
-#     BUNDLE_DIR = sys._MEIPASS                   <- src/, config/ defaults
-#
-#  B) Running as python main.py
-#     BASE_DIR   = folder containing main.py
-#     BUNDLE_DIR = same as BASE_DIR
-
 if getattr(sys, "frozen", False):
     BASE_DIR   = Path(sys.executable).parent
     BUNDLE_DIR = Path(sys._MEIPASS)
@@ -42,7 +24,6 @@ else:
     BASE_DIR   = Path(__file__).parent
     BUNDLE_DIR = BASE_DIR
 
-# Make sure Python can find src/ whether we are frozen or not
 for p in [str(BUNDLE_DIR), str(BASE_DIR)]:
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -53,16 +34,8 @@ from src.processor          import process
 from src.excel_writer       import append_report
 
 
-# ── Config ────────────────────────────────────────────────────────────────────
-
 def load_config() -> dict:
-    """
-    Always reads config/config.json from BASE_DIR (next to the .exe).
-    On very first run, if the file is missing, copies the bundled default
-    from inside the EXE so the user has something to edit.
-    """
     config_path = BASE_DIR / "config" / "config.json"
-
     if not config_path.exists():
         bundled = BUNDLE_DIR / "config" / "config.json"
         if bundled.exists():
@@ -73,33 +46,21 @@ def load_config() -> dict:
             print(f"  [ERROR] config/config.json not found.")
             input("  Press Enter to exit...")
             sys.exit(1)
-
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def resolve_paths(cfg: dict) -> dict:
-    """
-    Makes output/, downloads/, logs/ absolute paths anchored at BASE_DIR.
-    This ensures they are always created next to the .exe, not in the temp folder.
-    """
     for key in ("folder", "download_folder", "log_folder"):
         cfg["output"][key] = str(BASE_DIR / cfg["output"][key])
     return cfg
 
 
-# ── Menus ─────────────────────────────────────────────────────────────────────
-
 def ask_plmn(cfg: dict) -> dict:
-    """
-    Numbered circle/PLMN menu built from config.json -> circles list.
-    To add a new circle just add it in config.json — no code change needed.
-    """
     circles = cfg.get("circles", [])
     if not circles:
         print("  [ERROR] No circles defined in config.json -> circles")
         sys.exit(1)
-
     print()
     print("+=============================================================+")
     print("|           AutoNOC  --  Select Circle / PLMN                 |")
@@ -108,7 +69,6 @@ def ask_plmn(cfg: dict) -> dict:
         print(f"|  [{i}]  {c['name']:<20}  PLMN: {c['plmn']:<10}              |")
     print("+=============================================================+")
     print()
-
     while True:
         raw = input(f"  Select [1-{len(circles)}]: ").strip()
         try:
@@ -123,7 +83,6 @@ def ask_plmn(cfg: dict) -> dict:
 
 
 def ask_window_hours() -> int:
-    """Ask how many hours of data to include (1-24, default 4)."""
     print()
     while True:
         raw = input("  Hours of data to include? [1-24, default=4]: ").strip()
@@ -139,7 +98,6 @@ def ask_window_hours() -> int:
 
 
 def show_menu() -> list:
-    """Report type selection menu. Returns list of selected keys."""
     print()
     print("+=============================================================+")
     print("|           AutoNOC  --  Report Selection                     |")
@@ -151,7 +109,6 @@ def show_menu() -> list:
     print("+=============================================================+")
     print()
     choice = input("  Select [1/2/3/4/A/Q]: ").strip().upper()
-
     if choice == "Q":
         print("  Exiting AutoNOC.")
         sys.exit(0)
@@ -164,36 +121,25 @@ def show_menu() -> list:
         return show_menu()
 
 
-# ── Report runner ─────────────────────────────────────────────────────────────
-
 def run_report(key: str, csv_path: str, window_hours: int, cfg: dict, plmn: str):
-    """Filter CSV -> build DataFrame -> write formatted Excel block."""
     log  = logging.getLogger(__name__)
     rdef = ALL_REPORTS[key]
-
     log.info(f"-- {rdef['label']} --")
     log.info(f"   CSV    : {csv_path}")
     log.info(f"   Window : {window_hours}h  |  PLMN: {plmn}")
-
     summary = process(csv_path, window_hours, rdef, plmn, cfg)
     if summary.empty:
         log.warning("  No data in window — skipping.")
         return
-
     xlsx, sheet, r1, r2 = append_report(summary, rdef, cfg, plmn)
     log.info(f"  OK  sheet='{sheet}'  rows {r1}-{r2}  |  {xlsx}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 def main():
     parser = argparse.ArgumentParser(description="AutoNOC")
-    parser.add_argument("--test", action="store_true",
-                        help="Use local dummy CSV, no browser")
-    parser.add_argument("--all",  action="store_true",
-                        help="Generate all report types")
-    parser.add_argument("--csv",  default=None,
-                        help="Path to a specific CSV file")
+    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--all",  action="store_true")
+    parser.add_argument("--csv",  default=None)
     args = parser.parse_args()
 
     cfg = resolve_paths(load_config())
@@ -208,11 +154,9 @@ def main():
     print(f"  File   : {cfg['output']['master_filename']}")
     print(f"  Time   : {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
 
-    # Select reports
     selected = list(ALL_REPORTS.keys()) if args.all else show_menu()
     log.info(f"Reports: {[ALL_REPORTS[k]['label'] for k in selected]}")
 
-    # Select circle / PLMN
     non_interactive = args.all and args.test
     if non_interactive:
         circle = cfg["circles"][0]
@@ -223,24 +167,19 @@ def main():
         plmn   = circle["plmn"]
         log.info(f"Circle: {circle['name']}  PLMN: {plmn}")
 
-    # Time window
     window_hours = 4 if non_interactive else ask_window_hours()
     log.info(f"Window: {window_hours}h")
 
-    # Get CSV
     if args.csv:
         csv_path = args.csv
-
     elif args.test:
         csv_path = str(BASE_DIR / "downloads" / "dummy_traffic_report.csv")
         if not os.path.exists(csv_path):
             log.info("Generating dummy CSV...")
             import subprocess
             gen = str(BUNDLE_DIR / "generate_dummy_csv.py")
-            subprocess.run([sys.executable, gen], check=True,
-                           cwd=str(BASE_DIR))
+            subprocess.run([sys.executable, gen], check=True, cwd=str(BASE_DIR))
         log.info(f"Test CSV: {csv_path}")
-
     else:
         log.info(f"Opening browser for {circle['name']} (PLMN {plmn})...")
         try:
@@ -254,7 +193,6 @@ def main():
             input("\n  Press Enter to exit...")
             sys.exit(1)
 
-    # Archive raw CSV
     def archive_csv(path: str):
         arch = os.path.join(cfg["output"]["download_folder"], "archive")
         os.makedirs(arch, exist_ok=True)
@@ -264,7 +202,6 @@ def main():
         except Exception:
             pass
 
-    # Run reports
     print()
     for key in selected:
         try:
@@ -280,7 +217,6 @@ def main():
     log.info(f"  {cfg['output']['folder']}/{cfg['output']['master_filename']}")
     log.info("=" * 60)
 
-    # Keep window open when running as .exe so user can read output
     if getattr(sys, "frozen", False):
         input("\n  Press Enter to close...")
 

@@ -3,49 +3,78 @@ name: Build AutoNOC Windows EXE
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:   # lets you trigger manually from GitHub UI anytime
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-
-      # Step 1: Check out your repository code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python 3.11 on the Windows runner
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Step 3: Install all dependencies + PyInstaller
-      # requirements.txt has no venv — pip installs directly, which is correct
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Step 4: Build the EXE using AutoNOC.spec
-      # The spec file tells PyInstaller exactly what to bundle
-      - name: Build EXE
+      - name: Download ChromeDriver matching installed Chrome
+        run: |
+          # Get the major version of Chrome installed on the runner
+          $ChromeExe = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          if (!(Test-Path $ChromeExe)) {
+            $ChromeExe = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+          }
+          $ChromeVersion = (Get-Item $ChromeExe).VersionInfo.ProductVersion
+          $MajorVersion  = $ChromeVersion.Split(".")[0]
+          Write-Host "Chrome version: $ChromeVersion  (major: $MajorVersion)"
+
+          # Fetch the Chrome for Testing JSON manifest
+          $ApiUrl = "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
+          $Json   = Invoke-WebRequest $ApiUrl | ConvertFrom-Json
+
+          # Find the latest build matching the major version
+          $Match = $Json.versions | Where-Object { $_.version.StartsWith("$MajorVersion.") } | Select-Object -Last 1
+          if (-not $Match) {
+            Write-Error "No ChromeDriver found for Chrome $MajorVersion"
+            exit 1
+          }
+
+          $DriverUrl = ($Match.downloads.chromedriver | Where-Object { $_.platform -eq "win32" }).url
+          Write-Host "Downloading ChromeDriver from: $DriverUrl"
+
+          Invoke-WebRequest $DriverUrl -OutFile chromedriver.zip
+          Expand-Archive chromedriver.zip -DestinationPath chromedriver_extracted -Force
+
+          # Move chromedriver.exe to project root so AutoNOC.spec can find it
+          $DriverExe = Get-ChildItem -Path chromedriver_extracted -Filter "chromedriver.exe" -Recurse | Select-Object -First 1
+          Copy-Item $DriverExe.FullName -Destination "chromedriver.exe"
+          Write-Host "ChromeDriver ready: $(Resolve-Path chromedriver.exe)"
+        shell: pwsh
+
+      - name: Build EXE with PyInstaller
         run: |
           pyinstaller AutoNOC.spec
 
-      # Step 5: Verify the EXE was actually created
-      - name: Verify build output
+      - name: Verify EXE was created
         run: |
           dir dist\
-          echo "Build successful"
+          if (!(Test-Path "dist\AutoNOC.exe")) {
+            Write-Error "AutoNOC.exe not found in dist\"
+            exit 1
+          }
+          Write-Host "Build successful"
+        shell: pwsh
 
-      # Step 6: Upload the EXE as a downloadable artifact
-      # Go to Actions tab -> your run -> Artifacts section to download
-      - name: Upload EXE artifact
+      - name: Upload EXE as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AutoNOC
+          name: AutoNOC-Windows
           path: dist\AutoNOC.exe
           retention-days: 30

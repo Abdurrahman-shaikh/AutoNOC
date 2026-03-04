@@ -13,6 +13,24 @@
 
 import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+hiddenimports=[
+    # pandas internals
+    'pandas._libs.tslibs.np_datetime',
+    'pandas._libs.tslibs.nattype',
+    'pandas._libs.tslibs.timedeltas',
+    'pandas._libs.skiplist',
+    'numpy',
+    'numpy.core._methods',
+    'numpy.lib.format',
+    # openpyxl internals
+    'openpyxl.cell._writer',
+    'et_xmlfile',
+    # selenium internals
+    'selenium.webdriver.chrome.service',
+    'selenium.webdriver.support.expected_conditions',
+    'selenium.webdriver.support.ui',
+    'selenium.webdriver.common.by',
+],
 
 block_cipher = None
 
