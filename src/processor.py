@@ -126,7 +126,7 @@ def build_summary(df: pd.DataFrame, dt_col: str, rdef: dict, plmn: str) -> pd.Da
     return pd.DataFrame(result)
 
 
-def process(csv_path: str, window_hours: int, rdef: dict, plmn: str) -> pd.DataFrame:
+def process(csv_path: str, window_hours: int, rdef: dict, plmn: str, config: dict) -> pd.DataFrame:
     """
     Full pipeline: load CSV → filter to time window → build summary DataFrame.
     Returns an empty DataFrame if no rows fall within the window.
@@ -135,4 +135,4 @@ def process(csv_path: str, window_hours: int, rdef: dict, plmn: str) -> pd.DataF
     if df.empty:
         log.warning("  No rows found within the time window.")
         return pd.DataFrame()
-    return build_summary(df, dt_col, rdef, plmn)
+    return build_summary(df, dt_col, rdef, plmn, config)
