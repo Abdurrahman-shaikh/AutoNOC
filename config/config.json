@@ -1,0 +1,107 @@
+{
+    "portal": {
+        "login_url":          "https://10.145.14.36",
+        "url":                "https://10.145.14.36/traffic_reports",
+        "report_type":        "All Calls",
+        "report_periodicity": "15 mins",
+        "template":           "Default"
+    },
+
+    "_comment_circles": "Add or remove circles here. plmn must match exactly what the portal dropdown shows.",
+    "circles": [
+        { "name": "HR  — Haryana",   "plmn": "40434" },
+        { "name": "RJ  — Rajasthan", "plmn": "40459" },
+        { "name": "DL  — Delhi",     "plmn": "40470" }
+    ],
+
+    "_comment_plmn_columns": "Columns for Traffic report per PLMN. Key = PLMN exactly as in portal. __DEFAULT__ applies to any PLMN not listed. Columns appear in order you write them. Any name not in csv_map is searched directly in the CSV by fragment.",
+    "plmn_columns": {
+
+        "__DEFAULT__": [
+            "Date Time",
+            "PLMN",
+            "MO Total Calls",
+            "MO Answered",
+            "MT Total Calls",
+            "MT Answered",
+            "Total Calls",
+            "Total Answered",
+            "MO Answer\nRate (%)",
+            "MT Answer\nRate (%)",
+            "Total Answer\nRate (%)"
+        ],
+
+        "40434": [
+            "Date Time",
+            "PLMN",
+            "MO Total Calls",
+            "MO Answered",
+            "MT Total Calls",
+            "MT Answered",
+            "Total Calls",
+            "Total Answered",
+            "MO Answer\nRate (%)",
+            "MT Answer\nRate (%)",
+            "Total Answer\nRate (%)"
+        ],
+
+        "40459": [
+            "Date Time",
+            "PLMN",
+            "MO Total Calls",
+            "MO Answered",
+            "MT Total Calls",
+            "MT Answered",
+            "Total Calls",
+            "Total Answered",
+            "Total Recovery\nTimer_Expiry_102",
+            "Total Interworking\nUnspecified",
+            "MO Recovery\nTimer_Expiry_102",
+            "MT CAUSE\nACK TIMEOUT",
+            "MO Answer\nRate (%)",
+            "MT Answer\nRate (%)",
+            "Total Answer\nRate (%)"
+        ],
+
+        "40470": [
+            "Date Time",
+            "PLMN",
+            "MO Total Calls",
+            "MO Answered",
+            "MT Total Calls",
+            "MT Answered",
+            "Total Calls",
+            "Total Answered",
+            "MO Answer\nRate (%)",
+            "MT Answer\nRate (%)",
+            "Total Answer\nRate (%)"
+        ]
+    },
+
+    "schedule": {
+        "headless_browser": false
+    },
+    "output": {
+        "folder":           "output",
+        "master_filename":  "AutoNOC_Report.xlsx",
+        "download_folder":  "downloads",
+        "log_folder":       "logs"
+    },
+    "kpi_thresholds": {
+        "MO Answer\nRate (%)":    { "drop_pct": 4.0, "floor_pct": 40.0 },
+        "MT Answer\nRate (%)":    { "drop_pct": 4.0, "floor_pct": 40.0 },
+        "Total Answer\nRate (%)": { "drop_pct": 4.0, "floor_pct": 40.0 }
+    },
+    "colors": {
+        "drop_alert":      "FFA500",
+        "floor_breach":    "FF0000",
+        "total_row":       "E2EFDA",
+        "header_bg":       "1F3864",
+        "header_font":     "FFFFFF",
+        "sep_bg":          "2E4057",
+        "sep_font":        "FFFFFF",
+        "alt_row":         "D9E1F2",
+        "white":           "FFFFFF",
+        "sheet_tab_color": "1F3864"
+    }
+}
